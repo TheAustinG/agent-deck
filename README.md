@@ -3,25 +3,37 @@
 A Claude Code mod that opens a side panel whenever subagents start, with a live card for each agent.
 
 ```
-● 2 running  ✓ 1 done            $0.14 est.
+● 1 running  ✓ 1 done     2m14s · $0.04 est.
+━━━━━━━━━━━━━━━━━━━━──────────────────── 1/2
 
-1: ● Find auth code                  2m14s
-  Explore · haiku-5-5 · low · $0.03
-  ctx ██████░░░░ 58%   ▁▂▅▇▃▁▁▂▁▁▁▁▁▁▁
-  Searching for the token refresh logic
-  ✓ Read token.ts
-  … Bash npm test (12s)
+╭──────────────────────────────────────────╮
+│ 1: ◓ Find auth code                2m14s │
+│    Explore · haiku-5-5 · low · $0.03     │
+│    ctx ━━━━━━──── 58%  ▁▂▅▇▃▁▁▂▁▁▁▁▁▁▁   │
+│    Searching for the token refresh logic │
+│    ✓ Read token.ts                       │
+│    … Bash npm test (12s)                 │
+╰──────────────────────────────────────────╯
+╭──────────────────────────────────────────╮
+│ 2: ✓ Summarize the README  1m02s · $0.01 │
+╰──────────────────────────────────────────╯
+
+ctrl+x tab to focus, then 1-9 opens an agent
 ```
 
-Each card shows:
+The header counts the batch's agents, shows its elapsed time and cost estimate, and fills a bar as agents finish.
 
-- status, title and elapsed time
+Each running agent gets a card framed in its status color. The card shows:
+
+- status, title and elapsed time, with a dot that turns once a second while the agent works
 - agent type, model, effort and cost estimate
 - how full the agent's context window is
 - a sparkline of its recent token activity
 - what it says it is doing now
 - its last three tool calls, with a timer on any still running
 - a warning when it goes quiet or a tool call runs long
+
+A finished agent folds to one dim row with its time and cost. When the panel runs out of rows, those rows also lose their frames.
 
 ## Install
 
@@ -53,6 +65,8 @@ In the desktop app, where `/plugin` does not run: click + next to the prompt box
 
 - `! quiet 1m15s: no tokens or tools` means a running agent has produced no tokens and made no tool calls for at least a minute. One very long generation, such as writing a large file in a single call, can trigger it too.
 - `! Bash running 5m02s` means a single tool call has been running for five minutes or more.
+
+On either warning, the card's frame and title turn the warning color and its dot stops turning.
 
 ## Notes
 

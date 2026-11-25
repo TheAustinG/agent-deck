@@ -4,6 +4,7 @@ import { expect, test } from 'claude-code/testing'
 import {
   EMPTY_DECK,
   addSpawn,
+  batchElapsed,
   cardFromSpawn,
   dismiss,
   feedFrom,
@@ -11,8 +12,10 @@ import {
   formatUsd,
   gauge,
   gaugeTone,
+  heartbeat,
   mergeCard,
   mergeDeck,
+  progressBar,
   quietReason,
   shortModel,
   shouldOpen,
@@ -62,13 +65,45 @@ test('sparkline draws positive deltas scaled to the busiest step', () => {
 })
 
 test('gauge fills by share of the context window and colors past 70% and 90%', () => {
-  expect(gauge(0, 100)).toEqual({ bar: '░░░░░░░░░░', pct: 0 })
-  expect(gauge(58_000, 100_000)).toEqual({ bar: '██████░░░░', pct: 58 })
-  expect(gauge(500, 100)).toEqual({ bar: '██████████', pct: 100 })
+  expect(gauge(0, 100)).toEqual({ fill: '', rest: '──────────', pct: 0 })
+  expect(gauge(58_000, 100_000)).toEqual({ fill: '━━━━━━', rest: '────', pct: 58 })
+  expect(gauge(500, 100)).toEqual({ fill: '━━━━━━━━━━', rest: '', pct: 100 })
   expect(gauge(10, undefined)).toBeUndefined()
   expect(gaugeTone(69)).toBeUndefined()
   expect(gaugeTone(70)).toBe('warning')
   expect(gaugeTone(90)).toBe('error')
+})
+
+test('the heartbeat turns a quarter each second and comes round every four', () => {
+  expect([0, 1_000, 2_000, 3_000, 4_000].map(heartbeat)).toEqual(['◐', '◓', '◑', '◒', '◐'])
+  expect(heartbeat(1_999)).toBe('◓')
+})
+
+test('the progress bar fills with finished agents, failures in their own segment', () => {
+  const live = card()
+  const done = card({ status: 'completed' })
+  const failed = card({ status: 'failed' })
+
+  expect(progressBar([live, live], 10)).toEqual({ ok: '', bad: '', rest: '──────────' })
+  expect(progressBar([done, live, live], 9)).toEqual({ ok: '━━━', bad: '', rest: '──────' })
+  expect(progressBar([done, failed, live, live], 8)).toEqual({ ok: '━━', bad: '━━', rest: '────' })
+  expect(progressBar([done, done], 6)).toEqual({ ok: '━━━━━━', bad: '', rest: '' })
+  const oneFailureInTen = [failed, ...Array<Card>(4).fill(done), ...Array<Card>(5).fill(live)]
+  expect(progressBar(oneFailureInTen, 4)).toEqual({ ok: '━', bad: '━', rest: '──' })
+  expect(progressBar([], 4)).toEqual({ ok: '', bad: '', rest: '────' })
+})
+
+test('the batch time runs from the first start to now, or to the last end once all have ended', () => {
+  const first = card({ startTime: 1_000 })
+  const second = card({ id: 'a2', startTime: 4_000 })
+  expect(batchElapsed([first, second], 10_000)).toBe(9_000)
+
+  const ended = [
+    { ...first, status: 'completed' as const, endTime: 6_000 },
+    { ...second, status: 'failed' as const, endTime: 8_000 },
+  ]
+  expect(batchElapsed(ended, 50_000)).toBe(7_000)
+  expect(batchElapsed([], 50_000)).toBe(0)
 })
 
 test('a running agent with nothing in flight is quiet from 60s', () => {

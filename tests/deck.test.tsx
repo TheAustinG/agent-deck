@@ -1,8 +1,12 @@
 import type { AgentInfo, AgentSpawnInput, On, SessionMessage, UiPane } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import type { FoundElement } from 'claude-code/testing'
 
 const START = 1_700_000_000_000
 const SURFACES = ['terminal', 'desktop'] as const
+
+const frameOf = (boxes: readonly FoundElement[]): FoundElement | undefined =>
+  boxes.find(box => box.props.borderStyle !== undefined)
 
 type World = {
   nextId: string
@@ -133,13 +137,58 @@ test('a spawn opens the pane and a tick draws the card, on every surface', async
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect((await ui.find({ key: 'view-a1' }))?.text).toContain('Find auth code')
+    expect(frameOf(await ui.findAll({ type: 'Box', text: 'Find auth code' }))?.props).toMatchObject({
+      borderStyle: 'round',
+      borderColor: 'suggestion',
+    })
     expect(await ui.find({ type: 'Text', text: /Explore · haiku-5-5 · low · \$0\.03/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /58%/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /ctx ━━━━━━──── 58%/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Searching for token refresh/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /1 running/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /\$0\.03 est\./ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /done/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^ 1s · \$0\.03 est\.$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^─{40} 0\/1$/ })).toBeDefined()
     await ui.unmount()
   }
+})
+
+test('the header shows the batch time and a bar of the agents that have finished', async ($, on) => {
+  const w = world()
+  const clock = engine(on, w)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.agent.spawn(spawn())
+  w.nextId = 'a2'
+  await $.agent.spawn(spawn({ tool_use_id: 'tu2', description: 'Write the summary' }))
+  w.agents = [
+    agent({ status: 'completed', taskStatus: 'completed' }),
+    agent({ id: 'a2', description: 'Write the summary' }),
+  ]
+  await clock.advance(90_000)
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect(await ui.find({ type: 'Text', text: /^● 1 running {2}✓ 1 done$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^ 1m30s$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^━{20}─{20} 1\/2$/ })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('a running card turns its dot once a second', async ($, on) => {
+  const w = world()
+  const clock = engine(on, w)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.agent.spawn(spawn())
+  w.agents = [agent()]
+
+  const seen: (string | undefined)[] = []
+  for (let i = 0; i < 4; i++) {
+    await clock.advance(1000)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    seen.push((await ui.find({ key: 'view-a1' }))?.text.at(0))
+    await ui.unmount()
+  }
+  expect([...seen].sort()).toEqual(['◐', '◑', '◒', '◓'])
 })
 
 test('the feed shows a finished call and one in flight', async ($, on) => {
@@ -184,8 +233,17 @@ test('a running agent with no tokens or tools for a minute is flagged quiet', as
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect(await ui.find({ type: 'Text', text: /quiet 1m0\ds: no tokens or tools/ })).toBeDefined()
+    expect((await ui.find({ key: 'view-a1' }))?.text).toBe('● Find auth code')
+    expect(frameOf(await ui.findAll({ type: 'Box', text: 'Find auth code' }))?.props.borderColor).toBe(
+      'warning',
+    )
     await ui.unmount()
   }
+
+  await clock.advance(1000)
+  const later = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await later.find({ key: 'view-a1' }))?.text).toBe('● Find auth code')
+  await later.unmount()
 })
 
 test('the pane closes 60s after the last agent ends, later while focused', async ($, on) => {
@@ -292,7 +350,7 @@ test('a value an earlier version stored is declined', async ($, on) => {
   await ui.unmount()
 })
 
-test('finished cards shrink to one row when the pane is short', async ($, on) => {
+test('a finished card folds to one dim row and drops its frame when the pane is short', async ($, on) => {
   const w = world()
   const clock = engine(on, w)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
@@ -301,18 +359,35 @@ test('finished cards shrink to one row when the pane is short', async ($, on) =>
   await $.agent.spawn(spawn({ tool_use_id: 'tu2', description: 'Write the summary' }))
   w.agents = [
     agent({ status: 'completed', taskStatus: 'completed', model: 'claude-haiku-5-5', cost: { usd: 0.02 } }),
-    agent({ id: 'a2', description: 'Write the summary', model: 'claude-haiku-5-5' }),
+    agent({
+      id: 'a2',
+      description: 'Write the summary',
+      label: 'Drafting the summary',
+      model: 'claude-haiku-5-5',
+    }),
   ]
   await clock.advance(1000)
 
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({
+    const roomy = await $.ui.mount({ ...PANE, surface })
+    expect(await roomy.findAll({ type: 'Text', text: /haiku-5-5/ })).toHaveLength(1)
+    expect(await roomy.find({ type: 'Text', text: /^ \ds · \$0\.02$/ })).toBeDefined()
+    expect(frameOf(await roomy.findAll({ type: 'Box', text: 'Find auth code' }))?.props).toMatchObject({
+      borderStyle: 'round',
+      borderColor: 'success',
+      borderDimColor: true,
+    })
+    expect((await roomy.find({ type: 'Text', text: 'Find auth code' }))?.props.dimColor).toBe(true)
+    await roomy.unmount()
+
+    const short = await $.ui.mount({
       ...PANE,
       surface,
       props: { ...PANE.props, scroll: { offset: 0, bodyRows: 8 } },
     })
-    expect(await ui.findAll({ type: 'Text', text: /haiku-5-5/ })).toHaveLength(1)
-    expect(await ui.find({ type: 'Text', text: /\$0\.02/ })).toBeDefined()
-    await ui.unmount()
+    expect(frameOf(await short.findAll({ type: 'Box', text: 'Find auth code' }))).toBeUndefined()
+    expect(frameOf(await short.findAll({ type: 'Box', text: 'Write the summary' }))).toBeDefined()
+    expect(await short.find({ type: 'Text', text: /\$0\.02/ })).toBeDefined()
+    await short.unmount()
   }
 })

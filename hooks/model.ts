@@ -17,6 +17,9 @@ export const EMPTY_DECK: Deck = { batch: 0, ids: [], cards: [], feed: {}, now: 0
 const LIVE: ReadonlySet<AgentState> = new Set<AgentState>(['pending', 'running', 'waiting'])
 const ENDED: ReadonlySet<AgentState> = new Set<AgentState>(['completed', 'failed', 'killed', 'gone'])
 const BARS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'] as const
+const BEATS = ['◐', '◓', '◑', '◒'] as const
+const LINE_FULL = '━'
+const LINE_EMPTY = '─'
 
 export const isLiveStatus = (status: AgentState): boolean => LIVE.has(status)
 export const isEndedStatus = (status: AgentState): boolean => ENDED.has(status)
@@ -257,14 +260,38 @@ export function gauge(
   tokens: number,
   windowSize: number | undefined,
   cells: number = GAUGE_CELLS,
-): { bar: string; pct: number } | undefined {
+): { fill: string; rest: string; pct: number } | undefined {
   if (windowSize === undefined || windowSize <= 0) return undefined
 
   const ratio = Math.min(1, Math.max(0, tokens / windowSize))
   const filled = Math.round(ratio * cells)
 
-  return { bar: '█'.repeat(filled) + '░'.repeat(cells - filled), pct: Math.round(ratio * 100) }
+  return {
+    fill: LINE_FULL.repeat(filled),
+    rest: LINE_EMPTY.repeat(cells - filled),
+    pct: Math.round(ratio * 100),
+  }
 }
+
+export function progressBar(
+  cards: readonly Card[],
+  width: number,
+): { ok: string; bad: string; rest: string } {
+  const cells = Math.max(0, Math.floor(width))
+  const { done, failed } = tally(cards)
+  const ended = cards.length === 0 ? 0 : Math.round(((done + failed) / cards.length) * cells)
+  const bad =
+    failed === 0 ? 0 : Math.min(ended, Math.max(1, Math.round((failed / cards.length) * cells)))
+
+  return {
+    ok: LINE_FULL.repeat(ended - bad),
+    bad: LINE_FULL.repeat(bad),
+    rest: LINE_EMPTY.repeat(cells - ended),
+  }
+}
+
+export const heartbeat = (now: number): string =>
+  BEATS[Math.floor(now / 1000) % BEATS.length] ?? BEATS[0]
 
 export function gaugeTone(pct: number): 'error' | 'warning' | undefined {
   if (pct >= 90) return 'error'
@@ -292,6 +319,15 @@ export const shortModel = (model: string | undefined): string | undefined =>
 
 export const elapsedOf = (card: Card, now: number): number =>
   (card.endTime ?? Math.max(now, card.startTime)) - card.startTime
+
+export function batchElapsed(cards: readonly Card[], now: number): number {
+  if (cards.length === 0) return 0
+
+  const start = Math.min(...cards.map(card => card.startTime))
+  const end = cards.some(isLive) ? now : Math.max(...cards.map(card => card.endTime ?? now))
+
+  return Math.max(0, end - start)
+}
 
 export function tally(cards: readonly Card[]): { live: number; done: number; failed: number } {
   let live = 0
