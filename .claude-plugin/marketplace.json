@@ -1,0 +1,16 @@
+{
+  "name": "agent-deck",
+  "owner": {
+    "name": "TheAustinG"
+  },
+  "metadata": {
+    "description": "agent-deck: a live side panel for Claude Code subagents"
+  },
+  "plugins": [
+    {
+      "name": "agent-deck",
+      "source": "./",
+      "description": "A side panel that opens when subagents start, with a live card for each one"
+    }
+  ]
+}

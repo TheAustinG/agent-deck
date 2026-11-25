@@ -1,0 +1,11 @@
+{
+  "name": "agent-deck",
+  "version": "0.1.0",
+  "description": "A side panel that opens when subagents start, with a live card for each one",
+  "author": { "name": "TheAustinG", "url": "https://github.com/TheAustinG" },
+  "homepage": "https://github.com/TheAustinG/agent-deck",
+  "repository": "https://github.com/TheAustinG/agent-deck",
+  "license": "MIT",
+  "keywords": ["subagents", "panel", "pane", "mod"],
+  "types": "./types/index.d.ts"
+}
